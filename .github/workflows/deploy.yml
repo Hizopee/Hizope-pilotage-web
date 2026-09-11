@@ -1,0 +1,56 @@
+name: Deploy en production
+
+# Se déclenche à chaque push sur main. Build du site (Vite) dans l'Action, puis copie
+# de dist/ sur le VPS partagé (shared-vps), où Caddy le sert sur cmicrlocks.fr derrière
+# une authentification HTTP Basic (voir hizope-scaleway-deploy/shared-vps/Caddyfile).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Tests
+        run: npm test
+
+      - name: Build (Vite)
+        run: npm run build
+
+      - name: Copier dist/ sur shared-vps
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 62.210.78.72
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "dist/*"
+          target: "~/hizope-pilotage-web-dist"
+          strip_components: 1
+          rm: true
+
+      - name: Publier le site
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: 62.210.78.72
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            mkdir -p ~/hizope-scaleway-deploy/shared-vps/hizope-pilotage-website
+            rsync -a --delete ~/hizope-pilotage-web-dist/ ~/hizope-scaleway-deploy/shared-vps/hizope-pilotage-website/
+            cd ~/hizope-scaleway-deploy/shared-vps
+            docker compose -f docker-compose.prod.yml up -d caddy
+            docker compose -f docker-compose.prod.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile || true
