@@ -95,13 +95,66 @@
         <p v-else class="muted">Aucun virement enregistré pour l'instant.</p>
       </template>
     </section>
+
+    <section class="module">
+      <div class="logs-header">
+        <h2>CMicrolocks — Logs applicatifs</h2>
+        <div class="logs-controls">
+          <select v-model="logLevel" @change="loadLogs">
+            <option value="Warning">Warning et plus</option>
+            <option value="Information">Information et plus (bruyant)</option>
+            <option value="Error">Error et plus</option>
+          </select>
+          <button type="button" class="ghost-button" :disabled="logsLoading" @click="loadLogs">
+            {{ logsLoading ? "…" : "Rafraîchir" }}
+          </button>
+        </div>
+      </div>
+      <p class="muted small">
+        Tampon en mémoire côté API (les 1000 derniers, filtrés) — repart à vide à chaque
+        redémarrage/déploiement, ce n'est pas un historique persistant.
+      </p>
+
+      <div v-if="logsLoading && !logs.length" class="muted">Chargement…</div>
+      <div v-else-if="logsError" class="error-box">
+        Impossible de charger les logs : {{ logsError }}
+      </div>
+      <template v-else>
+        <table v-if="logs.length" class="data-table">
+          <thead>
+            <tr>
+              <th>Heure</th>
+              <th>Niveau</th>
+              <th>Catégorie</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(entry, i) in logs" :key="i">
+              <td class="nowrap">{{ formatDateTime(entry.timestamp) }}</td>
+              <td><span class="level-badge" :class="levelClass(entry.level)">{{ entry.level }}</span></td>
+              <td class="nowrap">{{ shortCategory(entry.category) }}</td>
+              <td>
+                {{ entry.message }}
+                <details v-if="entry.exception">
+                  <summary>Exception</summary>
+                  <pre>{{ entry.exception }}</pre>
+                </details>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-else class="muted">Aucun log à ce niveau pour l'instant.</p>
+      </template>
+    </section>
   </div>
 </template>
 
 <script setup>
 import { onMounted, reactive, ref } from "vue";
 import { getCmicrolocksReconciliationApi, recordCmicrolocksReversalApi } from "@/services/reconciliation.api";
-import { money, formatDate } from "@/utils/format.utils";
+import { getCmicrolocksLogsApi } from "@/services/logs.api";
+import { money, formatDate, formatDateTime } from "@/utils/format.utils";
 
 const loading = ref(true);
 const loadError = ref("");
@@ -143,7 +196,38 @@ const onRecordReversal = async () => {
   }
 };
 
-onMounted(load);
+const logs = ref([]);
+const logsLoading = ref(true);
+const logsError = ref("");
+const logLevel = ref("Warning");
+
+const loadLogs = async () => {
+  logsLoading.value = true;
+  logsError.value = "";
+  try {
+    logs.value = await getCmicrolocksLogsApi({ take: 200, level: logLevel.value });
+  } catch (e) {
+    logsError.value = e.response?.data?.detail || e.message || "Erreur inconnue.";
+  } finally {
+    logsLoading.value = false;
+  }
+};
+
+// "Microlocks.Api.Controllers.PlatformController" -> "PlatformController" : le namespace
+// complet n'apporte rien à l'affichage, juste de la largeur perdue dans la colonne.
+const shortCategory = (category) => category?.split(".").pop() || category;
+
+const levelClass = (level) => {
+  const l = (level || "").toLowerCase();
+  if (l === "critical" || l === "error") return "level-error";
+  if (l === "warning") return "level-warning";
+  return "level-info";
+};
+
+onMounted(() => {
+  load();
+  loadLogs();
+});
 </script>
 
 <style scoped>
@@ -308,6 +392,94 @@ header h1 {
 .data-table td {
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
+}
+
+.logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.logs-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logs-controls select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.ghost-button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.ghost-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.small {
+  font-size: 0.8rem;
+  margin: 6px 0 18px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.level-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.level-badge.level-error {
+  background: #fbe9e5;
+  color: var(--danger);
+}
+
+.level-badge.level-warning {
+  background: #fdf1de;
+  color: #a66418;
+}
+
+.level-badge.level-info {
+  background: var(--surface-variant);
+  color: var(--text-secondary);
+}
+
+.data-table details {
+  margin-top: 4px;
+}
+
+.data-table summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.data-table pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.75rem;
+  background: var(--surface-variant);
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 4px;
 }
 </style>
 
