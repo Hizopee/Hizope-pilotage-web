@@ -69,6 +69,16 @@
             <p class="kpi-value">{{ money(stripeEur.serviceFeeAmount) }}</p>
             <p class="kpi-sub">{{ stripeSummary.serviceFeePercent }} % du total</p>
           </div>
+          <div class="kpi">
+            <p class="kpi-label">Frais Stripe (carte bancaire)</p>
+            <p class="kpi-value">{{ money(stripeEur.stripeFeeAmount) }}</p>
+            <p class="kpi-sub">Absorbés par Hizope, pas déduits du versement à Cécilia</p>
+          </div>
+          <div class="kpi" :class="{ 'margin-negative': stripeEur.netMargin < 0 }">
+            <p class="kpi-label">Marge nette Hizope</p>
+            <p class="kpi-value">{{ money(stripeEur.netMargin) }}</p>
+            <p class="kpi-sub">Frais de service − frais Stripe</p>
+          </div>
           <div class="kpi accent">
             <p class="kpi-label">À verser à Cécilia</p>
             <p class="kpi-value">{{ money(payoutDueDisplay) }}</p>
@@ -271,7 +281,15 @@ const stripeError = ref("");
 const cmicrolocksConnected = computed(() => !stripeError.value && stripeSummary.value !== null);
 
 const stripeEur = computed(
-  () => stripeSummary.value?.totals?.eur || { chargesCount: 0, grossAmount: 0, serviceFeeAmount: 0, payoutDue: 0 }
+  () =>
+    stripeSummary.value?.totals?.eur || {
+      chargesCount: 0,
+      grossAmount: 0,
+      serviceFeeAmount: 0,
+      stripeFeeAmount: 0,
+      netMargin: 0,
+      payoutDue: 0,
+    }
 );
 const reversedSyncLog = computed(() => [...(stripeSummary.value?.syncLog || [])].reverse());
 const lastSyncLabel = computed(() => {
@@ -582,14 +600,8 @@ onMounted(() => {
 /* --- KPI row --- */
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
-}
-
-@media (max-width: 700px) {
-  .kpi-row {
-    grid-template-columns: 1fr;
-  }
 }
 
 .kpi {
@@ -620,6 +632,14 @@ onMounted(() => {
 
 .kpi.accent .kpi-value {
   color: var(--accent);
+}
+
+.kpi.margin-negative {
+  border-color: var(--warning);
+}
+
+.kpi.margin-negative .kpi-value {
+  color: var(--warning);
 }
 
 .kpi-sub {
