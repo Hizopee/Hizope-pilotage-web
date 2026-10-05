@@ -13,7 +13,7 @@
       >
         <span
           class="rail-dot"
-          :class="project.id === 'cmicrolocks' ? (cmicrolocksConnected ? 'status-ok' : 'status-down') : 'status-down'"
+          :class="projectConnected[project.id] ? 'status-ok' : 'status-down'"
         ></span>
         {{ project.label }}
       </button>
@@ -21,7 +21,7 @@
     </aside>
 
     <main class="main">
-      <template v-if="selectedProject !== 'cmicrolocks'">
+      <template v-if="!['cmicrolocks', 'lovelist'].includes(selectedProject)">
         <div class="topbar">
           <div>
             <h1>{{ selectedProjectLabel }}</h1>
@@ -32,6 +32,145 @@
           <div class="card-body pad empty-state">
             Le module {{ selectedProjectLabel }} n'est pas encore connecté. Il aura son propre suivi des acomptes et ses
             propres règles de reversement, comme CMicrolocks.
+          </div>
+        </div>
+      </template>
+
+      <template v-else-if="selectedProject === 'lovelist'">
+        <div class="topbar">
+          <div>
+            <h1>LoveList</h1>
+            <p class="topbar-meta">{{ lovelistSyncLabel }}</p>
+          </div>
+          <div class="env-switch" role="group" aria-label="Environnement">
+            <button class="env-btn" :class="{ active: env === 'test' }" @click="setEnv('test')">Test</button>
+            <button class="env-btn" :class="{ active: env === 'live' }" @click="setEnv('live')">Production</button>
+          </div>
+        </div>
+
+        <div class="test-banner" v-if="env === 'test'">
+          ⚠ Mode test — ces montants sont des paiements de test Stripe, pas de l'argent réel.
+        </div>
+
+        <div v-if="lovelistLoading" class="muted">Chargement…</div>
+        <div v-else-if="lovelistError" class="error-box">
+          Impossible de charger les données Stripe : {{ lovelistError }}
+        </div>
+
+        <template v-else-if="lovelistSummary">
+          <div class="kpi-row">
+            <div class="kpi">
+              <p class="kpi-label">Total encaissé</p>
+              <p class="kpi-value">{{ money(lovelistEur.grossAmount) }}</p>
+              <p class="kpi-sub">{{ lovelistEur.chargesCount }} paiement{{ lovelistEur.chargesCount > 1 ? "s" : "" }}</p>
+            </div>
+            <div class="kpi">
+              <p class="kpi-label">Frais Stripe (carte bancaire)</p>
+              <p class="kpi-value">{{ money(lovelistEur.stripeFeeAmount) }}</p>
+              <p class="kpi-sub">Prélevés par Stripe sur chaque paiement</p>
+            </div>
+            <div class="kpi accent" :class="{ 'margin-negative': lovelistEur.netMargin < 0 }">
+              <p class="kpi-label">Net pour Hizope</p>
+              <p class="kpi-value">{{ money(lovelistEur.netMargin) }}</p>
+              <p class="kpi-sub">Encaissé − frais Stripe · 0 % de commission</p>
+            </div>
+            <div class="kpi" v-if="lovelistPayouts">
+              <p class="kpi-label">Solde Stripe</p>
+              <p class="kpi-value">{{ money(lovelistPayouts.available?.eur) }}</p>
+              <p class="kpi-sub">Disponible · {{ money(lovelistPayouts.pending?.eur) }} en attente</p>
+            </div>
+          </div>
+
+          <div class="split">
+            <div class="card">
+              <div class="card-head"><h2>Alertes</h2></div>
+              <div class="card-body">
+                <div v-if="lovelistSummary.alerts.length" class="alerts-list">
+                  <div v-for="(alert, i) in lovelistSummary.alerts" :key="i" class="alert-item" :class="'alert-' + alert.severity">
+                    {{ alert.message }}
+                  </div>
+                </div>
+                <div v-else class="empty-state"><span class="ok-dot"></span>Aucune alerte — tout est calme.</div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><h2>Virements vers ton compte</h2></div>
+              <div class="card-body">
+                <div v-if="lovelistPayoutsError" class="error-box">
+                  Impossible de charger les virements : {{ lovelistPayoutsError }}
+                </div>
+                <table v-else-if="lovelistPayouts?.payouts.length" class="data-table">
+                  <thead><tr><th>Arrivée</th><th>Statut</th><th>Montant</th></tr></thead>
+                  <tbody>
+                    <tr v-for="payout in lovelistPayouts.payouts" :key="payout.id">
+                      <td>{{ formatDate(payout.arrivalDate) }}</td>
+                      <td>
+                        <span class="status-dot" :class="payoutDotClass(payout.status)"></span>{{ payoutStatusLabel(payout.status) }}
+                        <span v-if="payout.failureMessage" class="muted"> — {{ payout.failureMessage }}</span>
+                      </td>
+                      <td>{{ money(payout.amount) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-else class="empty-state">Aucun virement Stripe pour l'instant.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card rules-card">
+            <div class="rules-formula">
+              <strong>Pas de reversement.</strong> LoveList appartient à 100 % à Hizope : aucune commission,
+              tout l'encaissé te revient. Stripe vire automatiquement le solde disponible sur ton compte bancaire.
+            </div>
+            <div class="rules-chips">
+              <div class="chip-row"><span>Paiements en échec</span><span class="chip on">Activé</span></div>
+              <div class="chip-row"><span>Litiges (disputes)</span><span class="chip on">Activé</span></div>
+              <div class="chip-row"><span>Remboursements</span><span class="chip on">Activé</span></div>
+            </div>
+          </div>
+        </template>
+
+        <div class="card">
+          <div class="ops-body">
+            <div class="logs-header">
+              <h3>Logs applicatifs</h3>
+              <div class="logs-controls">
+                <select v-model="logLevel" @change="loadLogs">
+                  <option value="Warning">Warning et plus</option>
+                  <option value="Information">Information et plus (bruyant)</option>
+                  <option value="Error">Error et plus</option>
+                </select>
+                <button type="button" class="ghost-button" :disabled="logsLoading" @click="loadLogs">
+                  {{ logsLoading ? "…" : "Rafraîchir" }}
+                </button>
+              </div>
+            </div>
+            <p class="muted small">
+              Tampon en mémoire côté API LoveList — repart à vide à chaque redémarrage/déploiement.
+            </p>
+            <div v-if="logsLoading && !logs.length" class="muted">Chargement…</div>
+            <div v-else-if="logsError" class="error-box">Impossible de charger les logs : {{ logsError }}</div>
+            <template v-else>
+              <table v-if="logs.length" class="data-table">
+                <thead><tr><th>Heure</th><th>Niveau</th><th>Catégorie</th><th>Message</th></tr></thead>
+                <tbody>
+                  <tr v-for="(entry, i) in logs" :key="i">
+                    <td class="nowrap">{{ formatDateTime(entry.timestamp) }}</td>
+                    <td><span class="level-badge" :class="levelClass(entry.level)">{{ entry.level }}</span></td>
+                    <td class="nowrap">{{ shortCategory(entry.category) }}</td>
+                    <td>
+                      {{ entry.message }}
+                      <details v-if="entry.exception">
+                        <summary>Exception</summary>
+                        <pre>{{ entry.exception }}</pre>
+                      </details>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-else class="muted">Aucun log à ce niveau pour l'instant.</p>
+            </template>
           </div>
         </div>
       </template>
@@ -255,9 +394,9 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { getCmicrolocksReconciliationApi, recordCmicrolocksReversalApi } from "@/services/reconciliation.api";
-import { getCmicrolocksLogsApi } from "@/services/logs.api";
-import { getCmicrolocksStripeSummaryApi } from "@/services/stripe.api";
-import { money, formatDate, formatDateTime } from "@/utils/format.utils";
+import { getCmicrolocksLogsApi, getLovelistLogsApi } from "@/services/logs.api";
+import { getCmicrolocksStripeSummaryApi, getLovelistPayoutsApi, getLovelistStripeSummaryApi } from "@/services/stripe.api";
+import { money, formatDate, formatDateTime, payoutStatusLabel } from "@/utils/format.utils";
 
 const projects = [
   { id: "cmicrolocks", label: "CMicrolocks" },
@@ -291,6 +430,55 @@ const stripeEur = computed(
       payoutDue: 0,
     }
 );
+const errorMessage = (e) => e.response?.data?.detail || e.message || "Erreur inconnue.";
+
+// --- LoveList : 100 % Hizope, pas de commission ni de reversement. ---
+const lovelistSummary = ref(null);
+const lovelistLoading = ref(true);
+const lovelistError = ref("");
+const lovelistPayouts = ref(null);
+const lovelistPayoutsError = ref("");
+
+const lovelistConnected = computed(() => !lovelistError.value && lovelistSummary.value !== null);
+const projectConnected = computed(() => ({
+  cmicrolocks: cmicrolocksConnected.value,
+  lovelist: lovelistConnected.value,
+}));
+
+const lovelistEur = computed(
+  () => lovelistSummary.value?.totals?.eur || { chargesCount: 0, grossAmount: 0, stripeFeeAmount: 0, netMargin: 0 }
+);
+const lovelistSyncLabel = computed(() => {
+  const last = lovelistSummary.value?.syncLog?.at(-1);
+  if (!last) return "Pas encore synchronisé";
+  return `Dernière synchro : ${formatDateTime(last.timestamp)} · ${env.value === "test" ? "test" : "production"}`;
+});
+
+const loadLovelist = async () => {
+  lovelistLoading.value = true;
+  lovelistError.value = "";
+  lovelistPayoutsError.value = "";
+  // Indépendants : une clé sans droit "Payouts" ne doit pas masquer le résumé des paiements.
+  const [summary, payouts] = await Promise.allSettled([
+    getLovelistStripeSummaryApi(env.value),
+    getLovelistPayoutsApi(env.value),
+  ]);
+  if (summary.status === "fulfilled") lovelistSummary.value = summary.value;
+  else lovelistError.value = errorMessage(summary.reason);
+  if (payouts.status === "fulfilled") lovelistPayouts.value = payouts.value;
+  else {
+    lovelistPayouts.value = null;
+    lovelistPayoutsError.value = errorMessage(payouts.reason);
+  }
+  lovelistLoading.value = false;
+};
+
+const payoutDotClass = (status) => {
+  if (status === "paid") return "success";
+  if (status === "failed" || status === "canceled") return "error";
+  return "pending";
+};
+
 const reversedSyncLog = computed(() => [...(stripeSummary.value?.syncLog || [])].reverse());
 const lastSyncLabel = computed(() => {
   const last = reversedSyncLog.value[0];
@@ -317,6 +505,7 @@ const setEnv = (next) => {
 watch(env, () => {
   showMarkPaidForm.value = false;
   loadStripeSummary();
+  loadLovelist();
 });
 
 const loading = ref(true);
@@ -380,15 +569,22 @@ const logsLoading = ref(true);
 const logsError = ref("");
 const logLevel = ref("Warning");
 
+const logsApiFor = { cmicrolocks: getCmicrolocksLogsApi, lovelist: getLovelistLogsApi };
+
 const loadLogs = async () => {
+  const project = selectedProject.value;
+  const getLogs = logsApiFor[project];
+  if (!getLogs) return;
   logsLoading.value = true;
   logsError.value = "";
   try {
-    logs.value = await getCmicrolocksLogsApi({ take: 200, level: logLevel.value });
+    const result = await getLogs({ take: 200, level: logLevel.value });
+    // Réponse d'un projet qu'on a quitté entre-temps : ne pas l'afficher sur l'autre.
+    if (project === selectedProject.value) logs.value = result;
   } catch (e) {
-    logsError.value = e.response?.data?.detail || e.message || "Erreur inconnue.";
+    if (project === selectedProject.value) logsError.value = errorMessage(e);
   } finally {
-    logsLoading.value = false;
+    if (project === selectedProject.value) logsLoading.value = false;
   }
 };
 
@@ -403,8 +599,15 @@ const levelClass = (level) => {
   return "level-info";
 };
 
+// Les logs suivent le projet sélectionné (même tableau, source différente).
+watch(selectedProject, () => {
+  logs.value = [];
+  loadLogs();
+});
+
 onMounted(() => {
   loadStripeSummary();
+  loadLovelist();
   load();
   loadLogs();
 });
@@ -768,6 +971,10 @@ onMounted(() => {
 
 .status-dot.error {
   background: var(--critical);
+}
+
+.status-dot.pending {
+  background: var(--warning);
 }
 
 /* --- Rules card --- */

@@ -45,8 +45,11 @@ Actions`) :
 
 ```
 src/
-  services/reconciliation.api.js   # appels HTTP vers Hizope-pilotage-api
-  utils/format.utils.js            # formatage montant/date (fr-FR)
-  App.vue                          # module CMicrolocks — les prochains produits
-                                    # (LoveList, Gaia) ajouteront leur propre section
+  services/reconciliation.api.js   # appels HTTP vers Hizope-pilotage-api (reversements CMicrolocks)
+  services/stripe.api.js           # résumés Stripe + virements (CMicrolocks, LoveList)
+  services/logs.api.js             # logs applicatifs de chaque produit
+  utils/format.utils.js            # formatage montant/date/statut de virement (fr-FR)
+  App.vue                          # modules CMicrolocks (10 % de commission, reversement à
+                                    # Cécilia) et LoveList (100 % Hizope : encaissé, frais
+                                    # Stripe, net, virements Stripe, logs) — Gaia à venir
 ```

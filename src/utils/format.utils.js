@@ -5,3 +5,13 @@ export const formatDate = (iso) => new Date(iso).toLocaleDateString("fr-FR");
 
 export const formatDateTime = (iso) =>
   new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+const PAYOUT_STATUS_LABELS = {
+  paid: "Versé",
+  in_transit: "En cours",
+  pending: "En attente",
+  failed: "Échoué",
+  canceled: "Annulé",
+};
+
+export const payoutStatusLabel = (status) => PAYOUT_STATUS_LABELS[status] || status;
