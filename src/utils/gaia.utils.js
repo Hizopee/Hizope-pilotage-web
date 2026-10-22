@@ -2,7 +2,7 @@
 
 const APPROVAL = { Pending: "En attente", Approved: "Validée", Rejected: "Refusée" };
 const REPORT_REASON = {
-  NotQueerOrMale: "Profil non conforme (homme / hors communauté)",
+  NotQueerOrMale: "Profil hors de la communauté Gaia",
   Harassment: "Harcèlement",
   FakeProfile: "Faux profil",
   InappropriateContent: "Contenu inapproprié",
