@@ -115,6 +115,37 @@
           </div>
         </template>
 
+        <!-- Demandes de nouvelles propositions -->
+        <template v-else-if="tab === 'unlocks'">
+          <div class="card-head">
+            <h2>Demandes de nouvelles propositions</h2>
+            <label class="small"><input v-model="pendingUnlocksOnly" type="checkbox" @change="loadUnlocks" /> À traiter seulement</label>
+          </div>
+          <p class="muted pad small">
+            Une personne dont le cycle est terminé demande de nouveaux profils. En valider une ouvre son prochain cycle.
+          </p>
+          <p v-if="!unlocks.length" class="muted pad">Aucune demande.</p>
+          <div v-for="r in unlocks" :key="r.requestId" class="g-item">
+            <div class="g-item-head">
+              <a href="#" @click.prevent="selectUser(r.user.userId)"><strong>{{ r.user.displayName }}</strong></a>
+              <span class="g-badge" :class="unlockBadge(r)">{{ unlockLabel(r) }}</span>
+            </div>
+            <p class="small muted">
+              Demandé le {{ formatDateTime(r.createdAt) }}
+              <template v-if="r.cycleNumber"> · cycle n°{{ r.cycleNumber }} terminé le {{ formatDateTime(r.cycleEndedAt) }}</template>
+            </p>
+            <p class="small">
+              {{ r.proposalsCount }} proposition(s), {{ r.chosenCount }} choix, {{ r.hadMatch ? "avec" : "sans" }} match
+            </p>
+            <p v-if="r.message" class="small">« {{ r.message }} »</p>
+            <p v-if="r.reviewNote" class="small muted">Note : {{ r.reviewNote }}</p>
+            <div v-if="r.status === 'pending'" class="g-actions">
+              <button class="g-btn ok" type="button" :disabled="busy" @click="approveUnlock(r)">Valider (ouvre un nouveau cycle)</button>
+              <button class="g-btn warn" type="button" :disabled="busy" @click="rejectUnlock(r)">Refuser</button>
+            </div>
+          </div>
+        </template>
+
         <!-- Messages -->
         <template v-else-if="tab === 'messages'">
           <div class="card-head">
@@ -284,6 +315,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import {
   acceptGaiaVerificationApi,
+  approveGaiaUnlockApi,
   approveGaiaUserApi,
   banGaiaUserApi,
   gaiaPhotoUrl,
@@ -292,9 +324,11 @@ import {
   getGaiaUserApi,
   listGaiaMessagesApi,
   listGaiaReportsApi,
+  listGaiaUnlockRequestsApi,
   listGaiaUsersApi,
   listGaiaVerificationRequestsApi,
   refuseGaiaVerificationApi,
+  rejectGaiaUnlockApi,
   rejectGaiaUserApi,
   resolveGaiaReportApi,
   suspendGaiaUserApi,
@@ -314,6 +348,8 @@ const pendingUsers = ref([]);
 const verifications = ref([]);
 const reports = ref([]);
 const pendingReportsOnly = ref(true);
+const unlocks = ref([]);
+const pendingUnlocksOnly = ref(true);
 const messages = ref([]);
 const messageFilter = reactive({ userId: null, matchId: null });
 const members = ref([]);
@@ -327,11 +363,13 @@ const suspendForm = reactive({ reason: "", requestAudio: true, requestVideo: fal
 
 const toSubmit = computed(() => verifications.value.filter((r) => r.status === "Submitted").length);
 const pendingReports = computed(() => reports.value.filter((r) => !r.reviewedAt).length);
+const pendingUnlocks = computed(() => unlocks.value.filter((r) => r.status === "pending").length);
 
 const tabs = computed(() => [
   { id: "review", label: "À valider", count: pendingUsers.value.length },
   { id: "verifications", label: "Vérifications", count: toSubmit.value },
   { id: "reports", label: "Signalements", count: pendingReports.value },
+  { id: "unlocks", label: "Déblocages", count: pendingUnlocks.value },
   { id: "messages", label: "Messages", count: 0 },
   { id: "members", label: "Membres", count: 0 },
 ]);
@@ -361,6 +399,8 @@ const run = async (fn, successMessage) => {
 const loadPending = async () => (pendingUsers.value = await listGaiaUsersApi({ status: "pending" }));
 const loadVerifications = async () => (verifications.value = await listGaiaVerificationRequestsApi());
 const loadReports = async () => (reports.value = await listGaiaReportsApi(pendingReportsOnly.value));
+const loadUnlocks = async () =>
+  (unlocks.value = await listGaiaUnlockRequestsApi(pendingUnlocksOnly.value ? "pending" : undefined));
 const loadMembers = async () => {
   loading.value = true;
   try {
@@ -390,7 +430,7 @@ const loadAll = async () => {
   loading.value = true;
   error.value = "";
   try {
-    await Promise.all([loadPending(), loadVerifications(), loadReports()]);
+    await Promise.all([loadPending(), loadVerifications(), loadReports(), loadUnlocks()]);
     if (tab.value === "members") await loadMembers();
     if (selectedId.value) await refreshDetail();
   } catch (e) {
@@ -434,6 +474,30 @@ const afterDecision = async () => {
 };
 
 const ask = (message) => window.prompt(message, "");
+
+const unlockLabel = (r) => {
+  if (r.status === "pending") return "À traiter";
+  if (r.status === "approved") return r.consumed ? "Validée (cycle ouvert)" : "Validée (en attente de profils)";
+  return "Refusée";
+};
+const unlockBadge = (r) => (r.status === "pending" ? "v-submitted" : r.status === "approved" ? "v-accepted" : "v-refused");
+
+const approveUnlock = (r) => {
+  if (!window.confirm(`Ouvrir un nouveau cycle de propositions pour ${r.user.displayName} ?`)) return;
+  run(async () => {
+    await approveGaiaUnlockApi(r.requestId, "");
+    await loadUnlocks();
+  }, "Demande validée.");
+};
+
+const rejectUnlock = (r) => {
+  const note = ask(`Refuser la demande de ${r.user.displayName} ? Motif (interne) :`);
+  if (note === null) return;
+  run(async () => {
+    await rejectGaiaUnlockApi(r.requestId, note);
+    await loadUnlocks();
+  }, "Demande refusée.");
+};
 
 const approve = () => {
   if (!window.confirm(`Valider ${detail.value.summary.displayName} après écoute du vocal ?`)) return;

@@ -40,3 +40,12 @@ export const resolveGaiaReportApi = async (reportId, note) =>
 
 export const listGaiaMessagesApi = async ({ userId, matchId, take } = {}) =>
   (await apiClient.get("/messages", { params: { userId, matchId, take } })).data;
+
+// Demandes de nouvelles propositions (cycle terminé sans match), validées à la main.
+// status : pending | approved | rejected (vide = toutes).
+export const listGaiaUnlockRequestsApi = async (status) =>
+  (await apiClient.get("/unlock-requests", { params: { status } })).data;
+export const approveGaiaUnlockApi = async (requestId, note) =>
+  apiClient.post(`/unlock-requests/${requestId}/approve`, { note });
+export const rejectGaiaUnlockApi = async (requestId, note) =>
+  apiClient.post(`/unlock-requests/${requestId}/reject`, { note });
