@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { money, formatDate } from "./format.utils";
+import { money, formatDate, payoutStatusLabel } from "./format.utils";
 
 describe("money", () => {
   it("formate un montant en euros (fr-FR)", () => {
@@ -16,5 +16,17 @@ describe("money", () => {
 describe("formatDate", () => {
   it("formate une date ISO en date française", () => {
     expect(formatDate("2026-09-12T10:00:00Z")).toMatch(/12\/09\/2026/);
+  });
+});
+
+describe("payoutStatusLabel", () => {
+  it("traduit les statuts de virement Stripe", () => {
+    expect(payoutStatusLabel("paid")).toBe("Versé");
+    expect(payoutStatusLabel("in_transit")).toBe("En cours");
+    expect(payoutStatusLabel("failed")).toBe("Échoué");
+  });
+
+  it("renvoie le statut brut s'il est inconnu", () => {
+    expect(payoutStatusLabel("weird")).toBe("weird");
   });
 });
