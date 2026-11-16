@@ -21,7 +21,9 @@
     </aside>
 
     <main class="main">
-      <template v-if="!['cmicrolocks', 'lovelist'].includes(selectedProject)">
+      <GaiaModeration v-if="selectedProject === 'gaia'" />
+
+      <template v-else-if="!['cmicrolocks', 'lovelist'].includes(selectedProject)">
         <div class="topbar">
           <div>
             <h1>{{ selectedProjectLabel }}</h1>
@@ -397,6 +399,7 @@ import { getCmicrolocksReconciliationApi, recordCmicrolocksReversalApi } from "@
 import { getCmicrolocksLogsApi, getLovelistLogsApi } from "@/services/logs.api";
 import { getCmicrolocksStripeSummaryApi, getLovelistPayoutsApi, getLovelistStripeSummaryApi } from "@/services/stripe.api";
 import { money, formatDate, formatDateTime, payoutStatusLabel } from "@/utils/format.utils";
+import GaiaModeration from "@/components/GaiaModeration.vue";
 
 const projects = [
   { id: "cmicrolocks", label: "CMicrolocks" },
